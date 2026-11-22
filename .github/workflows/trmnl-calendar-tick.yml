@@ -1,0 +1,33 @@
+name: TRMNL calendar tick
+
+# Once an hour, nudge both calendar screens so TRMNL rebuilds them.
+# The layouts work out today's date themselves, but TRMNL only rebuilds a screen when its data changes.
+# This sends one tiny value ("tk", the Melbourne date and hour) with deep_merge, which keeps everything
+# the PC sent. So the screens move on at midnight, and the hourly strip's "now" moves, even with the PC off.
+#
+# Needs two repository secrets (Settings > Secrets and variables > Actions):
+#   TRMNL_WEEK_WEBHOOK   the Webhook URL of the "Calendar 7 Day" plugin
+#   TRMNL_MONTH_WEBHOOK  the Webhook URL of the "Calendar 28 Day" plugin
+
+on:
+  schedule:
+    - cron: "7 * * * *"   # hourly at :07 (GitHub may run it a few minutes late)
+  workflow_dispatch:       # "Run workflow" button, for testing
+
+jobs:
+  tick:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Nudge the calendar screens
+        env:
+          WEEK: ${{ secrets.TRMNL_WEEK_WEBHOOK }}
+          MONTH: ${{ secrets.TRMNL_MONTH_WEBHOOK }}
+        run: |
+          tick=$(TZ=Australia/Melbourne date +%Y-%m-%dT%H)
+          body="{\"merge_variables\":{\"tk\":\"$tick\"},\"merge_strategy\":\"deep_merge\"}"
+          for name in WEEK MONTH; do
+            url="${!name}"
+            if [ -z "$url" ]; then echo "$name webhook secret is missing"; exit 1; fi
+            curl -fsS -X POST -H "Content-Type: application/json" -d "$body" "$url" >/dev/null
+            echo "$name nudged ($tick)"
+          done
